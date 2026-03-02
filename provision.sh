@@ -135,18 +135,36 @@ if [ -d "$ENCRYPTED_DIR" ] && ls "$ENCRYPTED_DIR"/*.enc 1>/dev/null 2>&1; then
     log "Decrypted keystore: $BASE"
   done
 
-  # Create Kubernetes secret from decrypted keystores
+  # Create two Kubernetes secrets with the structure Nimbus expects:
+  #   validator-keystores: keystore JSON files (mounted at /validators/keys/)
+  #   validator-passwords: password files named by validator pubkey
+  #                        (mounted at /validators/secrets/, filename = 0x<pubkey>)
+  # Nimbus looks up the password for each keystore by reading the pubkey field
+  # from the keystore JSON and then opening secrets-dir/<pubkey>.
   KEYSTORE_ARGS=""
   PASSWORD_ARGS=""
   for f in "$TMPFS_DIR"/*.json; do
-    [ -f "$f" ] && KEYSTORE_ARGS+=" --from-file=$(basename $f)=$f"
-  done
-  for f in "$TMPFS_DIR"/*.pass; do
-    [ -f "$f" ] && PASSWORD_ARGS+=" --from-file=$(basename $f)=$f"
+    [ -f "$f" ] || continue
+    KEYSTORE_ARGS+=" --from-file=$(basename "$f")=$f"
+
+    # Derive matching password filename from the pubkey embedded in the keystore
+    PASS_SRC="${f%.json}.pass"
+    if [ -f "$PASS_SRC" ]; then
+      PUBKEY=$(jq -r '.pubkey' "$f")
+      [[ "$PUBKEY" == 0x* ]] || PUBKEY="0x${PUBKEY}"
+      PUBKEY_FILE="${TMPFS_DIR}/${PUBKEY}"
+      cp "$PASS_SRC" "$PUBKEY_FILE"
+      PASSWORD_ARGS+=" --from-file=${PUBKEY}=${PUBKEY_FILE}"
+    fi
   done
 
-  kubectl create secret generic validator-keys \
-    ${KEYSTORE_ARGS} ${PASSWORD_ARGS} \
+  kubectl create secret generic validator-keystores \
+    ${KEYSTORE_ARGS} \
+    --namespace=${NAMESPACE} \
+    --dry-run=client -o yaml | kubectl apply -f -
+
+  kubectl create secret generic validator-passwords \
+    ${PASSWORD_ARGS} \
     --namespace=${NAMESPACE} \
     --dry-run=client -o yaml | kubectl apply -f -
 

@@ -34,7 +34,6 @@ spec:
             - --metrics-address=0.0.0.0
             - --metrics-port=8008
             - --trusted-node-url=https://beaconstate-hoodi.chainsafe.io
-            - --suggested-fee-recipient=0xYOUR_ADDRESS
             - --graffiti=hoodi-3cmd
             - --validators-dir=/validators/keys
             - --secrets-dir=/validators/secrets
@@ -55,8 +54,14 @@ spec:
             - name: jwt-secret
               mountPath: /jwt
               readOnly: true
-            - name: validator-keys
-              mountPath: /validators
+            # validator-keystores and validator-passwords are separate secrets so
+            # Nimbus gets keystores at /validators/keys/<filename>.json and
+            # passwords at /validators/secrets/<0xpubkey> (Nimbus naming convention).
+            - name: validator-keystores
+              mountPath: /validators/keys
+              readOnly: true
+            - name: validator-passwords
+              mountPath: /validators/secrets
               readOnly: true
           resources:
             requests:
@@ -82,9 +87,13 @@ spec:
         - name: jwt-secret
           secret:
             secretName: jwt-secret
-        - name: validator-keys
+        - name: validator-keystores
           secret:
-            secretName: validator-keys
+            secretName: validator-keystores
+            optional: true
+        - name: validator-passwords
+          secret:
+            secretName: validator-passwords
             optional: true
   volumeClaimTemplates:
     - metadata:

@@ -31,6 +31,7 @@ spec:
             - --JsonRpc.EngineHost=0.0.0.0
             - --JsonRpc.EnginePort=8551
             - --JsonRpc.JwtSecretFile=/jwt/jwt.hex
+            - --HealthChecks.Enabled=true
             - --Metrics.Enabled=true
             - --Metrics.ExposePort=6060
           ports:
@@ -65,12 +66,15 @@ spec:
               port: 8545
             initialDelaySeconds: 60
             periodSeconds: 30
+            failureThreshold: 3
           livenessProbe:
-            httpGet:
-              path: /health
+            # TCP only — HTTP /health returns 503 while syncing and would
+            # trigger restarts during the entire initial sync (hours/days).
+            tcpSocket:
               port: 8545
             initialDelaySeconds: 120
             periodSeconds: 60
+            failureThreshold: 5
       volumes:
         - name: jwt-secret
           secret:
