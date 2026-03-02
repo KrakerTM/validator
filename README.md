@@ -1,3 +1,11 @@
+## TL:DR
+
+The design and code was obiously written and fixed with AI same as This readme. Hope it's readable enogh.
+Of course If we want to achieve real goal with only 3 commands, terraform should be a part of provisioning. Qick-fix will be to add makefile here, but with local state which I used for development it seems to be unnecessary - the IaC part was not expected in the exercise (or at least described :))
+
+
+
+
 # Ethereum Testnet Validator — 3-Command Deployment
 
 Hoodi testnet validator on AWS Graviton spot, KMS-encrypted keys, Minikube.
