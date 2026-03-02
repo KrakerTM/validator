@@ -115,26 +115,40 @@ fi
 echo ""
 echo "▸ VALIDATOR STATUS"
 VALIDATOR_PUBKEY_FILE="${SCRIPT_DIR}/validator-pubkey.txt"
-if [ -f "$VALIDATOR_PUBKEY_FILE" ]; then
+if [ ! -f "$VALIDATOR_PUBKEY_FILE" ]; then
+  warn "No pubkey file — create it: echo '0xYOUR_PUBKEY' > validator-pubkey.txt"
+else
   PUBKEY=$(cat "$VALIDATOR_PUBKEY_FILE")
+  # curl -f exits 22 on 4xx/5xx (validator not found at current head during sync).
+  # || true prevents set -e from killing the script at that point.
   VAL_STATUS=$(curl -sf \
-    "http://localhost:${BEACON_PORT}/eth/v1/beacon/states/head/validators?id=${PUBKEY}" 2>/dev/null)
-  if [ -n "${VAL_STATUS:-}" ]; then
-    STATUS=$(echo "$VAL_STATUS" | jq -r '.data[0].status')
+    "http://localhost:${BEACON_PORT}/eth/v1/beacon/states/head/validators?id=${PUBKEY}" \
+    2>/dev/null) || true
+  STATUS=$(echo "${VAL_STATUS:-}" | jq -r '.data[0].status // empty' 2>/dev/null || true)
+
+  if [ -n "$STATUS" ] && [ "$STATUS" != "null" ]; then
     BALANCE=$(echo "$VAL_STATUS" | jq -r '.data[0].balance')
-    INDEX=$(echo "$VAL_STATUS" | jq -r '.data[0].index')
+    INDEX=$(echo "$VAL_STATUS"   | jq -r '.data[0].index')
     case "$STATUS" in
-      active_ongoing) pass "Validator $INDEX: ACTIVE (balance: $BALANCE gwei)" ;;
-      pending_queued) warn "Validator $INDEX: PENDING (waiting for activation)" ;;
-      pending_initialized) warn "Validator: Deposit seen, waiting for processing" ;;
-      *) warn "Validator status: $STATUS" ;;
+      active_ongoing)       pass "Validator $INDEX: ACTIVE (balance: $BALANCE gwei)" ;;
+      pending_queued)       warn "Validator $INDEX: PENDING — in activation queue" ;;
+      pending_initialized)  warn "Validator $INDEX: PENDING — deposit seen, awaiting processing" ;;
+      active_exiting)       warn "Validator $INDEX: EXITING (balance: $BALANCE gwei)" ;;
+      *)                    warn "Validator $INDEX: $STATUS (balance: $BALANCE gwei)" ;;
     esac
   else
-    warn "Could not query validator status"
+    # Validator not found at current head — almost always means the beacon node
+    # is still syncing and the head slot predates the validator's activation.
+    HEAD_SLOT=$(echo "${SYNC:-}" | jq -r '.data.head_slot // "unknown"' 2>/dev/null)
+    SYNC_DIST=$(echo "${SYNC:-}"  | jq -r '.data.sync_distance // "unknown"' 2>/dev/null)
+    if [ "${IS_SYNCING:-}" = "true" ]; then
+      warn "Syncing — validator not visible yet at head slot $HEAD_SLOT ($SYNC_DIST slots behind)"
+      warn "Will show status automatically once sync reaches the activation epoch"
+    else
+      warn "Validator not found on chain for pubkey ${PUBKEY:0:12}..."
+      warn "Check that the deposit was submitted to the Hoodi launchpad"
+    fi
   fi
-else
-  warn "No validator pubkey file found at $VALIDATOR_PUBKEY_FILE"
-  warn "Create it with: echo '0xYOUR_PUBKEY' > $VALIDATOR_PUBKEY_FILE"
 fi
 
 # ── 8. Disk Usage ──

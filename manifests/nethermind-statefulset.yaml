@@ -61,15 +61,15 @@ spec:
               cpu: "2"
               memory: 8Gi
           readinessProbe:
-            httpGet:
-              path: /health
+            # TCP only — HTTP /health returns 503 while syncing (~days for Hoodi).
+            # A failing readiness probe removes the pod from service endpoints,
+            # breaking DNS for headless services. TCP confirms the port is open.
+            tcpSocket:
               port: 8545
-            initialDelaySeconds: 60
-            periodSeconds: 30
+            initialDelaySeconds: 30
+            periodSeconds: 15
             failureThreshold: 3
           livenessProbe:
-            # TCP only — HTTP /health returns 503 while syncing and would
-            # trigger restarts during the entire initial sync (hours/days).
             tcpSocket:
               port: 8545
             initialDelaySeconds: 120

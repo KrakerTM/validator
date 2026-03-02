@@ -19,6 +19,86 @@ spec:
         prometheus.io/port: "8008"
     spec:
       terminationGracePeriodSeconds: 120
+      initContainers:
+        # Nimbus (UID 1000) requires 0700 on its data directory but cannot
+        # chmod a root-owned hostpath PVC mount itself — do it as root first.
+        - name: fix-permissions
+          image: busybox:latest
+          securityContext:
+            runAsUser: 0
+          command: ['sh', '-c', 'chmod 700 /data && chown 1000:1000 /data']
+          volumeMounts:
+            - name: cl-data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: "50m"
+              memory: 32Mi
+        # trustedNodeSync is a one-shot subcommand that downloads a recent finalized
+        # checkpoint state so the beacon node doesn't have to sync from genesis.
+        # It exits 0 immediately if a finalized state already exists in /data,
+        # so it is safe to run on every pod restart (idempotent).
+        - name: checkpoint-sync
+          image: statusim/nimbus-eth2:multiarch-latest
+          command:
+            - /home/user/nimbus_beacon_node
+            - trustedNodeSync
+            - --network=hoodi
+            - --data-dir=/data
+            - --trusted-node-url=https://beaconstate-hoodi.chainsafe.io
+            - --backfill=false
+          volumeMounts:
+            - name: cl-data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: "500m"
+              memory: 1Gi
+            limits:
+              cpu: "1"
+              memory: 2Gi
+        # Copy validator keystores from read-only secret mounts onto the writable
+        # PVC in the layout Nimbus expects:
+        #   keys/<0xpubkey>/keystore.json   (one subdir per validator)
+        #   secrets/<0xpubkey>              (password file named by pubkey)
+        # Pubkey is extracted from the keystore JSON via grep.
+        # Idempotent: skips files that already exist.
+        - name: setup-validator-keys
+          image: busybox:latest
+          securityContext:
+            runAsUser: 1000
+          command:
+            - sh
+            - -c
+            - |
+              mkdir -p /data/validators/secrets
+              for ks in /keys-src/*.json; do
+                [ -f "$ks" ] || continue
+                PUBKEY=$(grep -o '"pubkey":"[^"]*"' "$ks" | cut -d'"' -f4)
+                [ -z "$PUBKEY" ] && PUBKEY=$(grep -o '"pubkey": "[^"]*"' "$ks" | cut -d'"' -f4)
+                [ -z "$PUBKEY" ] && continue
+                [[ "$PUBKEY" == 0x* ]] || PUBKEY="0x$PUBKEY"
+                mkdir -p "/data/validators/keys/$PUBKEY"
+                [ -f "/data/validators/keys/$PUBKEY/keystore.json" ] || \
+                  cp "$ks" "/data/validators/keys/$PUBKEY/keystore.json"
+                PASSFILE="/pass-src/$PUBKEY"
+                [ -f "$PASSFILE" ] && { \
+                  [ -f "/data/validators/secrets/$PUBKEY" ] || \
+                    cp "$PASSFILE" "/data/validators/secrets/$PUBKEY"; }
+              done
+          volumeMounts:
+            - name: cl-data
+              mountPath: /data
+            - name: validator-keystores
+              mountPath: /keys-src
+              readOnly: true
+            - name: validator-passwords
+              mountPath: /pass-src
+              readOnly: true
+          resources:
+            requests:
+              cpu: "50m"
+              memory: 32Mi
       containers:
         - name: nimbus
           image: statusim/nimbus-eth2:multiarch-latest
@@ -33,10 +113,10 @@ spec:
             - --metrics
             - --metrics-address=0.0.0.0
             - --metrics-port=8008
-            - --trusted-node-url=https://beaconstate-hoodi.chainsafe.io
             - --graffiti=hoodi-3cmd
-            - --validators-dir=/validators/keys
-            - --secrets-dir=/validators/secrets
+            - --suggested-fee-recipient=YOUR_WITHDRAWAL_ADDRESS
+            - --validators-dir=/data/validators/keys
+            - --secrets-dir=/data/validators/secrets
           ports:
             - containerPort: 9000
               name: p2p-tcp
