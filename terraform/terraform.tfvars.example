@@ -1,0 +1,27 @@
+# terraform.tfvars.example
+# Copy to terraform.tfvars and fill in your values.
+# terraform.tfvars is gitignored — never commit it.
+
+aws_region        = "us-east-1"
+availability_zone = "us-east-1a"
+
+project_name = "eth-validator"
+environment  = "testnet"
+
+# SSH access is automatically restricted to the IP of the machine running
+# `terraform apply` (via https://ipv4.icanhazip.com). No manual entry required.
+
+# Leave vpc_id / subnet_id empty to use the default VPC and default subnet in the AZ.
+# vpc_id    = "vpc-0abc123"
+# subnet_id = "subnet-0abc123"
+
+# EBS data volume — adjust if you need more growth headroom
+ebs_volume_size_gb  = 500
+ebs_iops            = 3000  # gp3 baseline (free)
+ebs_throughput_mbps = 250   # Above 125 MB/s baseline (~$15/mo extra vs baseline)
+
+# Spot price cap — leave empty to cap at current on-demand price.
+# Check current spot prices:
+#   aws ec2 describe-spot-price-history --instance-types t4g.xlarge --region us-east-1
+# spot_max_price = "0.08"
+spot_max_price = ""

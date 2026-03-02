@@ -1,0 +1,114 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: nimbus
+  labels:
+    app: nimbus
+spec:
+  serviceName: nimbus
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nimbus
+  template:
+    metadata:
+      labels:
+        app: nimbus
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8008"
+    spec:
+      terminationGracePeriodSeconds: 120
+      containers:
+        - name: nimbus
+          image: statusim/nimbus-eth2:multiarch-latest
+          args:
+            - --network=hoodi
+            - --data-dir=/data
+            - --el=http://nethermind:8551
+            - --jwt-secret=/jwt/jwt.hex
+            - --rest
+            - --rest-address=0.0.0.0
+            - --rest-port=5052
+            - --metrics
+            - --metrics-address=0.0.0.0
+            - --metrics-port=8008
+            - --trusted-node-url=https://beaconstate-hoodi.chainsafe.io
+            - --suggested-fee-recipient=0xYOUR_ADDRESS
+            - --graffiti=hoodi-3cmd
+            - --validators-dir=/validators/keys
+            - --secrets-dir=/validators/secrets
+          ports:
+            - containerPort: 9000
+              name: p2p-tcp
+              protocol: TCP
+            - containerPort: 9000
+              name: p2p-udp
+              protocol: UDP
+            - containerPort: 5052
+              name: beacon-api
+            - containerPort: 8008
+              name: metrics
+          volumeMounts:
+            - name: cl-data
+              mountPath: /data
+            - name: jwt-secret
+              mountPath: /jwt
+              readOnly: true
+            - name: validator-keys
+              mountPath: /validators
+              readOnly: true
+          resources:
+            requests:
+              cpu: "1"
+              memory: 3Gi
+            limits:
+              cpu: "2"
+              memory: 6Gi
+          readinessProbe:
+            httpGet:
+              path: /eth/v1/node/health
+              port: 5052
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /eth/v1/node/health
+              port: 5052
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            failureThreshold: 5
+      volumes:
+        - name: jwt-secret
+          secret:
+            secretName: jwt-secret
+        - name: validator-keys
+          secret:
+            secretName: validator-keys
+            optional: true
+  volumeClaimTemplates:
+    - metadata:
+        name: cl-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: eth-storage
+        resources:
+          requests:
+            storage: 100Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nimbus
+spec:
+  selector:
+    app: nimbus
+  clusterIP: None
+  ports:
+    - name: beacon-api
+      port: 5052
+    - name: p2p-tcp
+      port: 9000
+      protocol: TCP
+    - name: metrics
+      port: 8008

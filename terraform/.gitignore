@@ -1,0 +1,27 @@
+# Local Terraform state — never commit state files
+*.tfstate
+*.tfstate.backup
+*.tfstate.*.backup
+
+# Variable files with real values (secrets, IPs)
+terraform.tfvars
+*.auto.tfvars
+
+# Terraform working directory
+.terraform/
+
+# Crash logs
+crash.log
+crash.*.log
+
+# Override files (local overrides should not be shared)
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Plan files (may contain sensitive outputs)
+*.tfplan
+
+# .terraform.lock.hcl should be committed — do NOT gitignore it.
+# It pins provider versions and ensures reproducible applies.

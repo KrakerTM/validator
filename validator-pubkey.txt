@@ -1,0 +1,3 @@
+# Replace this line with your validator's BLS public key (0x...)
+# Example: 0xb3a4a...
+# Used by check-health.sh to query on-chain validator status.

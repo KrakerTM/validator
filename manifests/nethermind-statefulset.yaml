@@ -1,0 +1,105 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: nethermind
+  labels:
+    app: nethermind
+spec:
+  serviceName: nethermind
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nethermind
+  template:
+    metadata:
+      labels:
+        app: nethermind
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "6060"
+    spec:
+      terminationGracePeriodSeconds: 300
+      containers:
+        - name: nethermind
+          image: nethermind/nethermind:latest
+          args:
+            - --config=hoodi
+            - --datadir=/data
+            - --JsonRpc.Enabled=true
+            - --JsonRpc.Host=0.0.0.0
+            - --JsonRpc.Port=8545
+            - --JsonRpc.EngineHost=0.0.0.0
+            - --JsonRpc.EnginePort=8551
+            - --JsonRpc.JwtSecretFile=/jwt/jwt.hex
+            - --Metrics.Enabled=true
+            - --Metrics.ExposePort=6060
+          ports:
+            - containerPort: 30303
+              name: p2p-tcp
+              protocol: TCP
+            - containerPort: 30303
+              name: p2p-udp
+              protocol: UDP
+            - containerPort: 8545
+              name: http-rpc
+            - containerPort: 8551
+              name: engine-api
+            - containerPort: 6060
+              name: metrics
+          volumeMounts:
+            - name: el-data
+              mountPath: /data
+            - name: jwt-secret
+              mountPath: /jwt
+              readOnly: true
+          resources:
+            requests:
+              cpu: "1"
+              memory: 4Gi
+            limits:
+              cpu: "2"
+              memory: 8Gi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8545
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8545
+            initialDelaySeconds: 120
+            periodSeconds: 60
+      volumes:
+        - name: jwt-secret
+          secret:
+            secretName: jwt-secret
+  volumeClaimTemplates:
+    - metadata:
+        name: el-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: eth-storage
+        resources:
+          requests:
+            storage: 400Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nethermind
+spec:
+  selector:
+    app: nethermind
+  clusterIP: None
+  ports:
+    - name: engine-api
+      port: 8551
+    - name: http-rpc
+      port: 8545
+    - name: p2p-tcp
+      port: 30303
+      protocol: TCP
+    - name: metrics
+      port: 6060
